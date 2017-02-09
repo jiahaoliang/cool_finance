@@ -4,6 +4,8 @@ import logging
 from threading import Event
 from threading import Thread
 import time
+import traceback
+import sys
 
 from pytz import timezone
 import requests
@@ -33,6 +35,13 @@ if constants.DEBUG_LOG_FILE:
     fh.setLevel(constants.DEBUG_LOG_LEVEL)
     fh.setFormatter(formatter)
     logger.addHandler(fh)
+
+
+def log_uncaught_exceptions(ex_cls, ex, tb):
+    logger.error(''.join(traceback.format_tb(tb)))
+    logger.error('{0}: {1}'.format(ex_cls, ex))
+
+sys.excepthook = log_uncaught_exceptions
 
 
 class Worker(Thread):
