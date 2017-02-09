@@ -1,22 +1,19 @@
 import datetime
 import json
-import signal
-import sys
 from threading import Event
 from threading import Thread
 import time
 
 from pytz import timezone
 import requests
-from yahoo_finance import Share
 
 from cool_finance import constants
 from cool_finance import db
-from ulits.forked_pdb import ForkedPdb
+from cool_finance.data_sources.manager import DataSourceManager
 
 
 class Worker(Thread):
-    def __init__(self, db_client, stock_setting, stop_event):
+    def __init__(self, db_client, datasource_mgr, stock_setting, stop_event):
         super(Worker, self).__init__()
         self.stock_setting = stock_setting
         self.stock_symbol = stock_setting["name"]
@@ -24,12 +21,13 @@ class Worker(Thread):
         self.targets_list = stock_setting.get("targets_list")
         self.db_client = db_client
         self.stopped = stop_event
-        self.info_obj = Share(self.stock_symbol)
+        self.info_obj = datasource_mgr.get_vendor()(self.stock_symbol)
 
     def _get_stock_data(self, stock_symbol):
         data = self.info_obj
         data.refresh()
-        self.db_client.insert_one(data.data_set, stock_symbol)
+        data_set = data.get_data_json()
+        self.db_client.insert_one(data_set, stock_symbol)
         return self.info_obj
 
     def _get_notice_msg(self, stock_setting, price):
@@ -62,9 +60,10 @@ class Server(object):
 
     def __init__(self, config_file=constants.CONFIG_FILE):
         self._reload_config(config_file)
-        self.db_client = db.Client(constants.DB_HOST,
-                                   constants.DB_PORT)
-        self.worker_stopflag_list = []
+        self._db_client = db.Client(constants.DB_HOST,
+                                    constants.DB_PORT)
+        self._datasource_mgr = DataSourceManager()
+        self._worker_stopflag_list = []
 
     def _reload_config(self, config_file):
         with open(config_file) as stocks_config:
@@ -75,18 +74,19 @@ class Server(object):
     def start(self):
         for stock in self.stocks_list:
             stopflag = Event()
-            worker = Worker(self.db_client, stock, stopflag)
-            self.worker_stopflag_list.append((worker, stopflag))
+            worker = Worker(self._db_client, self._datasource_mgr,
+                            stock, stopflag)
+            self._worker_stopflag_list.append((worker, stopflag))
 
-        for worker, stopflag in self.worker_stopflag_list:
+        for worker, stopflag in self._worker_stopflag_list:
             worker.start()
 
     def end(self):
-        for worker, stopflag in self.worker_stopflag_list:
+        for worker, stopflag in self._worker_stopflag_list:
             stopflag.set()
 
     def wait_all_workers_done(self):
-        for worker, stopflag in self.worker_stopflag_list:
+        for worker, stopflag in self._worker_stopflag_list:
             worker.join()
 
 
@@ -114,12 +114,12 @@ def get_start_and_end_datetime(start_hour_min_sec=constants.START_HOUR_MIN_SEC,
 
 
 def main():
+    server = Server()
     try:
-        server = Server()
-
         start_datetime, end_datetime, tz = get_start_and_end_datetime()
-        while datetime.datetime.now(tz) < start_datetime:
-            time.sleep(1)
+        if not constants.START_NOW:
+            while datetime.datetime.now(tz) < start_datetime:
+                time.sleep(1)
         print "start"
         server.start()
 
