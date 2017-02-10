@@ -40,7 +40,7 @@ class BaseSource(object):
     def __init__(self, stock_symbol, *args, **kwargs):
         self.stock_symbol = stock_symbol
         if self._support_data_json:
-            self._data_json = self.fetch_data_json(self.stock_symbol)
+            self._data_json = None
 
     def __getattr__(self, name):
         if (not self._support_data_json and

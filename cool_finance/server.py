@@ -7,6 +7,11 @@ import time
 import traceback
 import sys
 
+try:
+    from urllib.error import HTTPError
+except ImportError:  # python 2
+    from urllib2 import HTTPError
+
 from pytz import timezone
 import requests
 
@@ -57,7 +62,7 @@ class Worker(Thread):
 
     def _get_stock_data(self, stock_symbol):
         data = self.info_obj
-        data.refresh()
+        data.fetch()
         data_set = data.get_data_json()
         self.db_client.insert_one(data_set, stock_symbol)
         return self.info_obj
@@ -79,7 +84,12 @@ class Worker(Thread):
 
     def run(self):
         while not (self.stopped.wait(self.delay) or self.stopped.is_set()):
-            data = self._get_stock_data(self.stock_symbol)
+            try:
+                data = self._get_stock_data(self.stock_symbol)
+            except HTTPError as err:
+                logger.warning("Fetch stock info %s failed. Retry later. "
+                               "Reason: %s", self.stock_symbol, err)
+                continue
             price = data.get_price()
             logger.debug("Got %s price: $%s", self.stock_symbol, str(price))
             for target in self.targets_list:
