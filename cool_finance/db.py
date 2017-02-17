@@ -17,4 +17,3 @@ class Client(object):
             collection = self.db[collection_name]
         id = collection.insert_one(data_json).inserted_id
         return id
-
