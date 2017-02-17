@@ -17,7 +17,10 @@ class GoogleFinance(BaseSource):
         const.STOCK_SYMBOL: "StockSymbol",
         const.LAST_TRADE_PRICE: "LastTradePrice",
         const.LAST_TRADE_DATETIME: "LastTradeDateTime",
-        const.LAST_TRADE_TIME: "LastTradeTime",
+        const.LAST_TRADE_TIME: "LastTradeTime"
+    }
+
+    _data_json_optional_keys = {
         const.YIELD: "Yield",
         const.DIVIDEND: "Dividend"
     }

@@ -13,16 +13,23 @@ class BaseSource(object):
     _support_data_json = True
     _translate_vendor_specific_key_to_common_key = True
     # _data_json_keys = {common_key:vendor_specific_key}
+    # Those keys are required keys.
+    # It will raise an KeyError is Data_json misses any of those.
     _data_json_keys = {
         const.INDEX: const.INDEX,
         const.STOCK_SYMBOL: const.STOCK_SYMBOL,
         const.LAST_TRADE_PRICE: const.LAST_TRADE_PRICE,
         const.LAST_TRADE_DATETIME: const.LAST_TRADE_DATETIME,
         const.LAST_TRADE_DATE: const.LAST_TRADE_DATE,
-        const.LAST_TRADE_TIME: const.LAST_TRADE_TIME,
+        const.LAST_TRADE_TIME: const.LAST_TRADE_TIME
+    }
+    # _data_json_optional_keys are optional keys.
+    # It will NOT raise an KeyError is Data_json misses any of those.
+    _data_json_optional_keys = {
         const.YIELD: const.YIELD,
         const.DIVIDEND: const.DIVIDEND
     }
+
     _data_json_related_apis = [
         "fetch_data_json",
         "refresh_data_json",
@@ -33,7 +40,7 @@ class BaseSource(object):
     def __init__(self, stock_symbol, *args, **kwargs):
         self.stock_symbol = stock_symbol
         if self._support_data_json:
-            self._data_json = self.fetch_data_json(self.stock_symbol)
+            self._data_json = None
 
     def __getattr__(self, name):
         if (not self._support_data_json and
@@ -48,6 +55,10 @@ class BaseSource(object):
         if self._translate_vendor_specific_key_to_common_key:
             for c_key, v_key in self._data_json_keys.items():
                 data_json[c_key] = data_json.pop(v_key)
+
+            for c_key, v_key in self._data_json_optional_keys.items():
+                if data_json.get(v_key):
+                    data_json[c_key] = data_json.pop(v_key)
 
         return data_json
 

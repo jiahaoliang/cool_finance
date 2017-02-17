@@ -7,6 +7,11 @@ import time
 import traceback
 import sys
 
+try:
+    from urllib.error import HTTPError
+except ImportError:  # python 2
+    from urllib2 import HTTPError
+
 from pytz import timezone
 import requests
 
@@ -57,7 +62,7 @@ class Worker(Thread):
 
     def _get_stock_data(self, stock_symbol):
         data = self.info_obj
-        data.refresh()
+        data.fetch()
         data_set = data.get_data_json()
         self.db_client.insert_one(data_set, stock_symbol)
         return self.info_obj
@@ -79,7 +84,12 @@ class Worker(Thread):
 
     def run(self):
         while not (self.stopped.wait(self.delay) or self.stopped.is_set()):
-            data = self._get_stock_data(self.stock_symbol)
+            try:
+                data = self._get_stock_data(self.stock_symbol)
+            except HTTPError as err:
+                logger.warning("Fetch stock info %s failed. Retry later. "
+                               "Reason: %s", self.stock_symbol, err)
+                continue
             price = data.get_price()
             logger.debug("Got %s price: $%s", self.stock_symbol, str(price))
             for target in self.targets_list:
@@ -92,16 +102,19 @@ class Worker(Thread):
 class Server(object):
 
     def __init__(self, config_file=constants.CONFIG_FILE):
-        self._reload_config(config_file)
+        self._config_file = config_file
+        self.reload_config(self._config_file)
         self._db_client = db.Client(constants.DB_HOST,
                                     constants.DB_PORT)
         self._datasource_mgr = DataSourceManager()
         self._worker_stopflag_list = []
 
-    def _reload_config(self, config_file):
+    def reload_config(self, config_file=None):
+        if not config_file:
+            config_file = self._config_file
         with open(config_file) as stocks_config:
             stocks_json = json.load(stocks_config)
-        # {"stocks": [{"name":, "less_than","greater_than", "interval_s"}]}
+        # {"stocks": [{"name":"", "targets_list":[int], "interval_s": int}]}
         self.stocks_list = stocks_json['stocks']
 
     def start(self):
@@ -118,9 +131,16 @@ class Server(object):
         for worker, stopflag in self._worker_stopflag_list:
             stopflag.set()
 
+    def restart(self):
+        self.end()
+        self.wait_all_workers_done()
+        self.reload_config()
+        self.start()
+
     def wait_all_workers_done(self):
-        for worker, stopflag in self._worker_stopflag_list:
+        for index, (worker, stopflag) in enumerate(self._worker_stopflag_list):
             worker.join()
+            self._worker_stopflag_list.remove(index)
 
 
 def get_start_and_end_datetime(start_hour_min_sec=constants.START_HOUR_MIN_SEC,
@@ -147,25 +167,27 @@ def main():
     logger.info("Welcome to Cool Finance by F.JHL.")
     server = Server()
     try:
-        start_datetime, end_datetime, tz = get_start_and_end_datetime()
-        if not constants.START_NOW:
-            logger.info("The server will start at %s.", start_datetime)
-            logger.info("The server will end at %s.", end_datetime)
-            delta = start_datetime - datetime.datetime.now(tz)
-            logger.info("The server will start %s later.", delta)
-            while datetime.datetime.now(tz) < start_datetime:
-                time.sleep(1)
-        logger.info("The server is going to start.")
-        server.start()
-        logger.info("The server is already started.")
+        while True:
+            server.reload_config()
+            start_datetime, end_datetime, tz = get_start_and_end_datetime()
+            if not constants.START_NOW:
+                logger.info("The server will start at %s.", start_datetime)
+                logger.info("The server will end at %s.", end_datetime)
+                delta = start_datetime - datetime.datetime.now(tz)
+                logger.info("The server will start %s later.", delta)
+                while datetime.datetime.now(tz) < start_datetime:
+                    time.sleep(1)
+            logger.info("The server is going to start.")
+            server.start()
+            logger.info("The server is already started.")
 
-        while datetime.datetime.now(tz) < end_datetime:
-            time.sleep(1)
-        logger.info("The server is going to end.")
-        server.end()
-        logger.info("The server is already end.")
-    except KeyboardInterrupt:
-        logger.info("KeyboardInterrupt: The server is going to end.")
+            while datetime.datetime.now(tz) < end_datetime:
+                time.sleep(1)
+            logger.info("The server is going to end.")
+            server.end()
+            logger.info("The server is already end.")
+    except (KeyboardInterrupt, Exception) as err:
+        logger.info("Exception %s: The server is going to end.", err)
         server.end()
         logger.info("The server is already end.")
     finally:
