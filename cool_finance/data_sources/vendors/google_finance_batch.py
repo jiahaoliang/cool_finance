@@ -3,7 +3,7 @@ from threading import Lock
 
 from googlefinance import getQuotes
 
-from cool_finance.constants import QUORY_PRECISION_S
+from cool_finance.constants import QUERY_PRECISION_S
 from cool_finance.data_sources import constants as const
 from cool_finance.data_sources.vendors.google_finance import GoogleFinance
 from cool_finance.log import logger
@@ -46,7 +46,7 @@ class GoogleFinanceBatchHandler(object):
             now = datetime.datetime.now()
             last_update = self._stocks_data[LAST_UPDATE]
             delta = now - last_update
-            if delta.total_seconds() <= QUORY_PRECISION_S:
+            if delta.total_seconds() <= QUERY_PRECISION_S:
                 return False
         return True
 

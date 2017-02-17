@@ -25,8 +25,8 @@ CLOSED_WEEKDAYS = [5, 6]
 # Only one notification will be generated
 # every NOTIFICATION_INTERVAL_S seconds for same stock.
 NOTIFICATION_INTERVAL_S = 300
-# Guarantee query result is within QUORY_PRECISION_S seconds up to date.
+# Guarantee query result is within QUERY_PRECISION_S seconds up to date.
 # A significant large number (10x, 100x) can reduce query amount to
 # date source server. Tweak it if you have a daily query limit.
 # Google data source doesn't seem to have a limit.
-QUORY_PRECISION_S = 0.1
+QUERY_PRECISION_S = 0.1
