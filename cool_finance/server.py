@@ -7,6 +7,7 @@ from threading import Thread
 import time
 
 from pytz import timezone
+import requests
 from yahoo_finance import Share
 
 from cool_finance import constants
@@ -23,18 +24,27 @@ class Worker(Thread):
         self.targets_list = stock_setting.get("targets_list")
         self.db_client = db_client
         self.stopped = stop_event
+        self.info_obj = Share(self.stock_symbol)
 
     def _get_stock_data(self, stock_symbol):
-        data = Share(stock_symbol)
+        data = self.info_obj
+        data.refresh()
         self.db_client.insert_one(data.data_set, stock_symbol)
-        return data
+        return self.info_obj
 
     def _get_notice_msg(self, stock_setting, price):
-        msg = dict(stock_setting)
-        msg['price'] = price
-        return msg
+        # msg = dict(stock_setting)
+        # msg['price'] = price
+        # return msg
+        payload = {'value1': self.stock_symbol,
+                   'value2': price,
+                   'value3': "test"}
+        return payload
 
     def _send_nofitication(self, msg):
+        r = requests.post("https://maker.ifttt.com/trigger/log_update/"
+                          "with/key/cJmpqL9rVFwEOAnNmRAfFn",
+                          data=msg)
         print msg
 
     def run(self):
