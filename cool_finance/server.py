@@ -1,52 +1,21 @@
 import datetime
 import json
-import logging
 from threading import Event
 from threading import Thread
 import time
-import traceback
-import sys
-
-try:
-    from urllib.error import HTTPError
-except ImportError:  # python 2
-    from urllib2 import HTTPError
 
 from pytz import timezone
 import requests
 
-from cool_finance import constants
-from cool_finance import db
-from cool_finance.data_sources.manager import DataSourceManager
+from . import constants
+from . import db
+from .data_sources.manager import DataSourceManager
+from .log import logger
 
-# create logger
-logger = logging.getLogger(__name__)
-if constants.DEBUG_LOG_FILE:
-    logger.setLevel(constants.DEBUG_LOG_LEVEL)
-else:
-    logger.setLevel(constants.LOG_LEVEL)
-# create console handler with a higher log level
-ch = logging.StreamHandler()
-ch.setLevel(constants.LOG_LEVEL)
-# create formatter and add it to the handlers
-formatter = logging.Formatter(constants.LOG_FORMAT)
-ch.setFormatter(formatter)
-# add the handlers to the logger
-logger.addHandler(ch)
-
-# create file handler which logs even debug messages
-if constants.DEBUG_LOG_FILE:
-    fh = logging.FileHandler(constants.DEBUG_LOG_FILE)
-    fh.setLevel(constants.DEBUG_LOG_LEVEL)
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
+# server will be initialized in main()
+server = None
 
 
-def log_uncaught_exceptions(ex_cls, ex, tb):
-    logger.error(''.join(traceback.format_tb(tb)))
-    logger.error('{0}: {1}'.format(ex_cls, ex))
-
-sys.excepthook = log_uncaught_exceptions
 
 
 class Worker(Thread):
@@ -59,6 +28,7 @@ class Worker(Thread):
         self.db_client = db_client
         self.stopped = stop_event
         self.info_obj = datasource_mgr.get_vendor()(self.stock_symbol)
+        self._last_notification_datetime = None
 
     def _get_stock_data(self, stock_symbol):
         data = self.info_obj
@@ -86,9 +56,10 @@ class Worker(Thread):
         while not (self.stopped.wait(self.delay) or self.stopped.is_set()):
             try:
                 data = self._get_stock_data(self.stock_symbol)
-            except HTTPError as err:
+            except Exception as err:
                 logger.warning("Fetch stock info %s failed. Retry later. "
-                               "Reason: %s", self.stock_symbol, err)
+                               "Reason: %s", self.stock_symbol, err,
+                               exc_info=True)
                 continue
             price = data.get_price()
             logger.debug("Got %s price: $%s", self.stock_symbol, str(price))
@@ -96,7 +67,13 @@ class Worker(Thread):
                 if abs(float(price) - target) <= 0.01:
                     notice_msg = self._get_notice_msg(
                         self.stock_setting, price)
-                    self._send_nofitication(notice_msg)
+                    now = datetime.datetime.now()
+                    if (not self._last_notification_datetime or
+                            (now - self._last_notification_datetime).
+                            total_seconds() >=
+                            constants.NOTIFICATION_INTERVAL_S):
+                        self._send_nofitication(notice_msg)
+                        self._last_notification_datetime = now
 
 
 class Server(object):
@@ -140,7 +117,7 @@ class Server(object):
     def wait_all_workers_done(self):
         for index, (worker, stopflag) in enumerate(self._worker_stopflag_list):
             worker.join()
-            self._worker_stopflag_list.remove(index)
+            self._worker_stopflag_list.pop(index)
 
 
 def get_start_and_end_datetime(start_hour_min_sec=constants.START_HOUR_MIN_SEC,
@@ -165,6 +142,7 @@ def get_start_and_end_datetime(start_hour_min_sec=constants.START_HOUR_MIN_SEC,
 
 def main():
     logger.info("Welcome to Cool Finance by F.JHL.")
+    global server
     server = Server()
     try:
         while True:
