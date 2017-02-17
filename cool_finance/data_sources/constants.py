@@ -1,8 +1,9 @@
 # datasource vendor names
 BASE_VENDOR = "BASE"
 GOOGLE_FINANCE_VENDOR = "google_finance"
+GOOGLE_FINANCE_BATCH_VENDOR = "google_finance_batch"
 
-DEFAULT_DATASOURCE = GOOGLE_FINANCE_VENDOR
+DEFAULT_DATASOURCE = GOOGLE_FINANCE_BATCH_VENDOR
 
 INDEX = "index"  # NASDAQ, NYSE...
 LAST_TRADE_PRICE = "last_trade_price"

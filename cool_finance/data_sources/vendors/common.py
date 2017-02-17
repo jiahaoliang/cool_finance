@@ -38,6 +38,7 @@ class BaseSource(object):
     ]
 
     def __init__(self, stock_symbol, *args, **kwargs):
+        stock_symbol = stock_symbol.encode('utf-8').upper()
         self.stock_symbol = stock_symbol
         if self._support_data_json:
             self._data_json = None

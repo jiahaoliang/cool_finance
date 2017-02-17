@@ -28,5 +28,4 @@ class GoogleFinance(BaseSource):
     def _fetch(self, *args, **kwargs):
         # googlefinance has a bug if the getQuote() input is unicode
         # change the type to str explicitly
-        stock_symbol = self.stock_symbol.encode('utf-8')
-        return getQuotes(stock_symbol)[0]
+        return getQuotes(self.stock_symbol)[0]
