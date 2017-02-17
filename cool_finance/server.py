@@ -1,8 +1,11 @@
 import datetime
 import json
+import logging
 from threading import Event
 from threading import Thread
 import time
+import traceback
+import sys
 
 from pytz import timezone
 import requests
@@ -10,6 +13,35 @@ import requests
 from cool_finance import constants
 from cool_finance import db
 from cool_finance.data_sources.manager import DataSourceManager
+
+# create logger
+logger = logging.getLogger(__name__)
+if constants.DEBUG_LOG_FILE:
+    logger.setLevel(constants.DEBUG_LOG_LEVEL)
+else:
+    logger.setLevel(constants.LOG_LEVEL)
+# create console handler with a higher log level
+ch = logging.StreamHandler()
+ch.setLevel(constants.LOG_LEVEL)
+# create formatter and add it to the handlers
+formatter = logging.Formatter(constants.LOG_FORMAT)
+ch.setFormatter(formatter)
+# add the handlers to the logger
+logger.addHandler(ch)
+
+# create file handler which logs even debug messages
+if constants.DEBUG_LOG_FILE:
+    fh = logging.FileHandler(constants.DEBUG_LOG_FILE)
+    fh.setLevel(constants.DEBUG_LOG_LEVEL)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+
+
+def log_uncaught_exceptions(ex_cls, ex, tb):
+    logger.error(''.join(traceback.format_tb(tb)))
+    logger.error('{0}: {1}'.format(ex_cls, ex))
+
+sys.excepthook = log_uncaught_exceptions
 
 
 class Worker(Thread):
@@ -43,12 +75,13 @@ class Worker(Thread):
         r = requests.post("https://maker.ifttt.com/trigger/log_update/"
                           "with/key/cJmpqL9rVFwEOAnNmRAfFn",
                           data=msg)
-        print msg
+        logger.info("Sent notification: %s", msg)
 
     def run(self):
         while not (self.stopped.wait(self.delay) or self.stopped.is_set()):
             data = self._get_stock_data(self.stock_symbol)
             price = data.get_price()
+            logger.debug("Got %s price: $%s", self.stock_symbol, str(price))
             for target in self.targets_list:
                 if abs(float(price) - target) <= 0.01:
                     notice_msg = self._get_notice_msg(
@@ -107,28 +140,36 @@ def get_start_and_end_datetime(start_hour_min_sec=constants.START_HOUR_MIN_SEC,
                                           minute=end_hour_min_sec[1],
                                           second=end_hour_min_sec[2])
 
-    delta = start_datetime - current_datetime
-    print delta
-
     return start_datetime, end_datetime, tz
 
 
 def main():
+    logger.info("Welcome to Cool Finance by F.JHL.")
     server = Server()
     try:
         start_datetime, end_datetime, tz = get_start_and_end_datetime()
         if not constants.START_NOW:
+            logger.info("The server will start at %s.", start_datetime)
+            logger.info("The server will end at %s.", end_datetime)
+            delta = start_datetime - datetime.datetime.now(tz)
+            logger.info("The server will start %s later.", delta)
             while datetime.datetime.now(tz) < start_datetime:
                 time.sleep(1)
-        print "start"
+        logger.info("The server is going to start.")
         server.start()
+        logger.info("The server is already started.")
 
         while datetime.datetime.now(tz) < end_datetime:
             time.sleep(1)
-        print "end"
+        logger.info("The server is going to end.")
         server.end()
+        logger.info("The server is already end.")
     except KeyboardInterrupt:
-        print "KeyboardInterrupt"
+        logger.info("KeyboardInterrupt: The server is going to end.")
         server.end()
+        logger.info("The server is already end.")
     finally:
+        logger.info("The server is going to wait for "
+                    "all pending jobs complete.")
         server.wait_all_workers_done()
+        logger.info("All jobs completes. Bye.")
